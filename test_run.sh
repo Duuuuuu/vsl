@@ -5,11 +5,10 @@ source activate py35
 python vsl_g.py \
     --debug 1 \
     --model g \
-    --data_file twitter.data \
-    --prior_file test_g \
+    --data_file twitter1.0.data \
     --vocab_file twitter \
-    --tag_file tagger_twitter \
-    --embed_file wordvects.tw100w5-m40-it2 \
+    --tag_file twitter_tagfile \
+    --embed_file twitter/twitter_wordvects \
     --n_iter 30000 \
     --save_prior 1 \
     --train_emb 0 \
