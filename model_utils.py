@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 
 from torch.autograd import Variable
+import numpy as np
 
 
 def gaussian(mean, logvar):
@@ -49,8 +50,13 @@ def get_rnn_output(inputs, mask, cell, bidir=False, initial_state=None):
     index_sorted_idx = sorted_idx\
         .view(-1, 1, 1).expand_as(inputs)
     sorted_inputs = inputs.gather(0, index_sorted_idx.long())
-    packed_seq = torch.nn.utils.rnn.pack_padded_sequence(
-        sorted_inputs, sorted_len.long().cpu().data.numpy(), batch_first=True)
+    
+    try:
+        packed_seq = torch.nn.utils.rnn.pack_padded_sequence(
+            sorted_inputs, sorted_len.long().cpu().data.numpy(), batch_first=True)
+    except:
+        packed_seq = torch.nn.utils.rnn.pack_padded_sequence(
+            sorted_inputs, np.array([sorted_len.long().cpu().data.numpy()]), batch_first=True)
     out, _ = cell(packed_seq, hx=initial_state)
     unpacked, unpacked_len = \
         torch.nn.utils.rnn.pad_packed_sequence(
