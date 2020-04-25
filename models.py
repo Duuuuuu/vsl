@@ -1,323 +1,481 @@
-import os
 import torch
-import model_utils
-
 import torch.nn as nn
-import stochastic_layers as sl
-import torch.nn.functional as F
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from utils import *
 
-from decorators import auto_init_pytorch
-from torch.autograd import Variable
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-class base(nn.Module):
-    def __init__(self, word_vocab_size, char_vocab_size, embed_dim,
-                 embed_init, n_tags, experiment):
-        super(base, self).__init__()
-        self.expe = experiment
-        self.use_cuda = self.expe.config.use_cuda
-        self.char_encoder = model_utils.char_rnn(
-            rnn_type=self.expe.config.rtype,
-            vocab_size=char_vocab_size,
-            embed_dim=self.expe.config.cdim,
-            hidden_size=self.expe.config.chsize)
+class Highway(nn.Module):
+    """
+    Highway Network.
+    """
 
-        self.word_embed = nn.Embedding(word_vocab_size, embed_dim)
+    def __init__(self, size, num_layers=1, dropout=0.5):
+        """
+        :param size: size of linear layer (matches input size)
+        :param num_layers: number of transform and gate layers
+        :param dropout: dropout
+        """
+        super(Highway, self).__init__()
+        self.size = size
+        self.num_layers = num_layers
+        self.transform = nn.ModuleList()  # list of transform layers
+        self.gate = nn.ModuleList()  # list of gate layers
+        self.dropout = nn.Dropout(p=dropout)
 
-        if embed_init is not None:
-            self.word_embed.weight.data.copy_(torch.from_numpy(embed_init))
-            self.expe.log.info("Initialized with pretrained word embedding")
-        if not self.expe.config.train_emb:
-            self.word_embed.weight.requires_grad = False
-            self.expe.log.info("Word Embedding not trainable")
+        for i in range(num_layers):
+            transform = nn.Linear(size, size)
+            gate = nn.Linear(size, size)
+            self.transform.append(transform)
+            self.gate.append(gate)
 
-        self.word_encoder = model_utils.get_rnn(self.expe.config.rtype)(
-            input_size=(embed_dim + 2 * self.expe.config.chsize),
-            hidden_size=self.expe.config.rsize,
-            bidirectional=True,
-            batch_first=True)
+    def forward(self, x):
+        """
+        Forward propagation.
 
-        self.x2token = nn.Linear(
-            embed_dim, word_vocab_size, bias=False)
+        :param x: input tensor
+        :return: output tensor, with same dimensions as input tensor
+        """
+        transformed = nn.functional.relu(self.transform[0](x))  # transform input
+        g = nn.functional.sigmoid(self.gate[0](x))  # calculate how much of the transformed input to keep
 
-        if self.expe.config.tw:
-            self.x2token.weight = self.word_embed.weight
+        out = g * transformed + (1 - g) * x  # combine input and transformed input in this ratio
 
-    def get_input_vecs(self, data, mask, char, char_mask):
-        word_emb = self.word_embed(data.long())
+        # If there are additional layers
+        for i in range(1, self.num_layers):
+            out = self.dropout(out)
+            transformed = nn.functional.relu(self.transform[i](out))
+            g = nn.functional.sigmoid(self.gate[i](out))
 
-        char_input = self.char_encoder(char, char_mask, mask)
-        data_emb = torch.cat([char_input, word_emb], dim=-1)
+            out = g * transformed + (1 - g) * out
 
-        return data_emb
+        return out
 
-    def to_var(self, inputs):
-        if self.use_cuda:
-            if isinstance(inputs, Variable):
-                inputs = inputs.cuda()
-                inputs.volatile = self.volatile
-                return inputs
+
+class CRF(nn.Module):
+    """
+    Conditional Random Field.
+    """
+
+    def __init__(self, hidden_dim, tagset_size, tag_map):
+        """
+        :param hidden_dim: size of word RNN/BLSTM's output
+        :param tagset_size: number of tags
+        """
+        super(CRF, self).__init__()
+        self.tagset_size = tagset_size
+        self.emission = nn.Linear(hidden_dim, self.tagset_size)
+        self.init_linear(self.emission)
+
+        self.transition = nn.Parameter(torch.Tensor(self.tagset_size, self.tagset_size))
+        self.transition.data.zero_()
+        # These two statements enforce the constraint that we never transfer
+        # to the start tag and we never transfer from the stop tag
+        self.transition.data[tag_map['<start>'], :] = -10000
+        self.transition.data[:, tag_map['<end>']] = -10000
+
+    def forward(self, feats):
+        """
+        Forward propagation.
+
+        :param feats: output of word RNN/BLSTM, a tensor of dimensions (batch_size, timesteps, hidden_dim)
+        :return: CRF scores, a tensor of dimensions (batch_size, timesteps, tagset_size, tagset_size)
+        """
+        self.batch_size = feats.size(0)
+        self.timesteps = feats.size(1)
+
+        emission_scores = self.emission(feats)  # (batch_size, timesteps, tagset_size)
+        emission_scores = emission_scores.unsqueeze(2).expand(self.batch_size, self.timesteps, self.tagset_size,
+                                                              self.tagset_size)  # (batch_size, timesteps, tagset_size, tagset_size)
+
+        crf_scores = emission_scores + self.transition.unsqueeze(0).unsqueeze(
+            0)  # (batch_size, timesteps, tagset_size, tagset_size)
+        return crf_scores
+
+    def init_linear(self, input_linear):
+        """
+        Initialize linear transformation
+        """
+        bias = np.sqrt(6.0 / (input_linear.weight.size(0) + input_linear.weight.size(1)))
+        nn.init.uniform_(input_linear.weight, -bias, bias)
+        if input_linear.bias is not None:
+            input_linear.bias.data.zero_()
+
+
+class LM_LSTM_CRF(nn.Module):
+    """
+    The encompassing LM-LSTM-CRF model.
+    """
+
+    def __init__(self, tagset_size, tagset_map, charset_size, char_emb_dim, char_feat_dim, char_rnn_layers, vocab_size,
+                 lm_vocab_size, word_emb_dim, word_rnn_dim, word_rnn_layers, dropout, highway_layers=1, char_type='lstm'):
+        """
+        :param tagset_size: number of tags
+        :param charset_size: size of character vocabulary
+        :param char_emb_dim: size of character embeddings
+        :param char_feat_dim: size of character RNNs/LSTMs
+        :param char_rnn_layers: number of layers in character RNNs/LSTMs
+        :param vocab_size: input vocabulary size
+        :param lm_vocab_size: vocabulary size of language models (in-corpus words subject to word frequency threshold)
+        :param word_emb_dim: size of word embeddings
+        :param word_rnn_dim: size of word RNN/BLSTM
+        :param word_rnn_layers:  number of layers in word RNNs/LSTMs
+        :param dropout: dropout
+        :param highway_layers: number of transform and gate layers
+        """
+
+        super(LM_LSTM_CRF, self).__init__()
+
+        self.tagset_size = tagset_size  # this is the size of the output vocab of the tagging model
+        self.tagset_map = tagset_map
+
+        self.charset_size = charset_size
+        self.char_emb_dim = char_emb_dim
+        self.char_feat_dim = char_feat_dim
+        self.char_rnn_layers = char_rnn_layers
+
+        self.wordset_size = vocab_size  # this is the size of the input vocab (embedding layer) of the tagging model
+        self.lm_vocab_size = lm_vocab_size  # this is the size of the output vocab of the language model
+        self.word_emb_dim = word_emb_dim
+        self.word_rnn_dim = word_rnn_dim
+        self.word_rnn_layers = word_rnn_layers
+
+        self.char_type = char_type
+
+        self.highway_layers = highway_layers
+
+        self.dropout = nn.Dropout(p=dropout)
+
+        self.char_embeds = nn.Embedding(self.charset_size, self.char_emb_dim)  # character embedding layer
+        init_embedding(self.char_embeds.weight)
+
+        self.word_embeds = nn.Embedding(self.wordset_size, self.word_emb_dim)  # word embedding layer
+        init_embedding(self.word_embeds.weight)
+
+        if self.char_type == 'lstm':
+            self.forw_char_lstm = nn.LSTM(self.char_emb_dim, self.char_feat_dim, num_layers=self.char_rnn_layers,
+                                        bidirectional=False, dropout=dropout)  # forward character LSTM
+            self.back_char_lstm = nn.LSTM(self.char_emb_dim, self.char_feat_dim, num_layers=self.char_rnn_layers,
+                                        bidirectional=False, dropout=dropout)  # backward character LSTM
+            self.forw_lm_hw = Highway(self.char_feat_dim, num_layers=self.highway_layers,
+                                    dropout=dropout)  # highway to transform forward char LSTM output for the forward language model
+            self.back_lm_hw = Highway(self.char_feat_dim, num_layers=self.highway_layers,
+                                    dropout=dropout)  # highway to transform backward char LSTM output for the backward language model
+            self.subword_hw = Highway(2 * self.char_feat_dim, num_layers=self.highway_layers,
+                                    dropout=dropout)  # highway to transform combined forward and backward char LSTM outputs for use in the word BLSTM
+
+            self.forw_lm_out = nn.Linear(self.char_feat_dim,
+                                        self.lm_vocab_size)  # linear layer to find vocabulary scores for the forward language model
+            self.back_lm_out = nn.Linear(self.char_feat_dim,
+                                        self.lm_vocab_size)  # linear layer to find vocabulary scores for the backward language model
+
+            self.word_blstm = nn.LSTM(self.word_emb_dim + self.char_feat_dim * 2, self.word_rnn_dim,
+                                    num_layers=self.word_rnn_layers, bidirectional=True, dropout=dropout)  # word BLSTM
+
+        elif self.char_type == 'cnn':
+            self.char_cnn3 = nn.Conv2d(in_channels=1, out_channels=self.char_feat_dim, kernel_size=(3, self.char_emb_dim), padding=(2,0))
+
+            self.word_blstm = nn.LSTM(self.word_emb_dim + self.char_feat_dim, self.word_rnn_dim,
+                                    num_layers=self.word_rnn_layers, bidirectional=True)  # word BLSTM
+        else:
+            self.word_blstm = nn.LSTM(self.word_emb_dim, self.word_rnn_dim,
+                                    num_layers=self.word_rnn_layers, bidirectional=True)  # word BLSTM
+
+
+        self.init_lstm(self.word_blstm)
+
+        self.crf = CRF(self.word_rnn_dim * 2, self.tagset_size, self.tagset_map)  # conditional random field
+
+    def init_word_embeddings(self, embeddings):
+        """
+        Initialize embeddings with pre-trained embeddings.
+
+        :param embeddings: pre-trained embeddings
+        """
+        self.word_embeds.weight = nn.Parameter(embeddings)
+
+    def fine_tune_word_embeddings(self, fine_tune=False):
+        """
+        Fine-tune embedding layer? (Not fine-tuning only makes sense if using pre-trained embeddings).
+
+        :param fine_tune: Fine-tune?
+        """
+        for p in self.word_embeds.parameters():
+            p.requires_grad = fine_tune
+
+    def forward(self, cmaps_f, cmaps_b, cmarkers_f, cmarkers_b, wmaps, cmaps, tmaps, wmap_lengths, cmap_lengths, cmap_w_lengths):
+        """
+        Forward propagation.
+
+        :param cmaps_f: padded encoded forward character sequences, a tensor of dimensions (batch_size, char_pad_len)
+        :param cmaps_b: padded encoded backward character sequences, a tensor of dimensions (batch_size, char_pad_len)
+        :param cmarkers_f: padded forward character markers, a tensor of dimensions (batch_size, word_pad_len)
+        :param cmarkers_b: padded backward character markers, a tensor of dimensions (batch_size, word_pad_len)
+        :param wmaps: padded encoded word sequences, a tensor of dimensions (batch_size, word_pad_len)
+        :param tmaps: padded tag sequences, a tensor of dimensions (batch_size, word_pad_len)
+        :param wmap_lengths: word sequence lengths, a tensor of dimensions (batch_size)
+        :param cmap_lengths: character sequence lengths, a tensor of dimensions (batch_size, word_pad_len)
+        """
+        self.batch_size = wmaps.size(0)
+        self.word_pad_len = wmaps.size(1)
+
+        if self.char_type == 'lstm':
+            # Sort by decreasing true char. sequence length
+            cmap_lengths, char_sort_ind = cmap_lengths.sort(dim=0, descending=True)
+            cmaps_f = cmaps_f[char_sort_ind]
+            cmaps_b = cmaps_b[char_sort_ind]
+            cmarkers_f = cmarkers_f[char_sort_ind]
+            cmarkers_b = cmarkers_b[char_sort_ind]
+            wmaps = wmaps[char_sort_ind]
+            tmaps = tmaps[char_sort_ind]
+            wmap_lengths = wmap_lengths[char_sort_ind]
+
+            # Embedding look-up for characters
+            cf = self.char_embeds(cmaps_f)  # (batch_size, char_pad_len, char_emb_dim)
+            cb = self.char_embeds(cmaps_b)
+
+            # Dropout
+            cf = self.dropout(cf)  # (batch_size, char_pad_len, char_emb_dim)
+            cb = self.dropout(cb)
+
+            # Pack padded sequence
+            cf = pack_padded_sequence(cf, cmap_lengths.tolist(), batch_first=True)  # packed sequence of char_emb_dim, with real sequence lengths
+            cb = pack_padded_sequence(cb, cmap_lengths.tolist(), batch_first=True)
+
+            # LSTM
+            cf, _ = self.forw_char_lstm(cf)  # packed sequence of char_feat_dim, with real sequence lengths
+            cb, _ = self.back_char_lstm(cb)
+
+            # Unpack packed sequence
+            cf, _ = pad_packed_sequence(cf, batch_first=True)  # (batch_size, max_char_len_in_batch, char_feat_dim)
+            cb, _ = pad_packed_sequence(cb, batch_first=True)
+
+            # Sanity check
+            assert cf.size(1) == max(cmap_lengths.tolist()) == list(cmap_lengths)[0]
+
+            # Select RNN outputs only at marker points (spaces in the character sequence)
+            cmarkers_f = cmarkers_f.unsqueeze(2).expand(self.batch_size, self.word_pad_len, self.char_feat_dim)
+            cmarkers_b = cmarkers_b.unsqueeze(2).expand(self.batch_size, self.word_pad_len, self.char_feat_dim)
+            cf_selected = torch.gather(cf, 1, cmarkers_f)  # (batch_size, word_pad_len, char_feat_dim)
+            cb_selected = torch.gather(cb, 1, cmarkers_b)
+
+            # Only for co-training, not useful for tagging after model is trained
+            if self.training:
+                lm_f = self.forw_lm_hw(self.dropout(cf_selected))  # (batch_size, word_pad_len, char_feat_dim)
+                lm_b = self.back_lm_hw(self.dropout(cb_selected))
+                lm_f_scores = self.forw_lm_out(self.dropout(lm_f))  # (batch_size, word_pad_len, lm_vocab_size)
+                lm_b_scores = self.back_lm_out(self.dropout(lm_b))
+
+            # Sort by decreasing true word sequence length
+            wmap_lengths, word_sort_ind = wmap_lengths.sort(dim=0, descending=True)
+            wmaps = wmaps[word_sort_ind]
+            tmaps = tmaps[word_sort_ind]
+            cf_selected = cf_selected[word_sort_ind]  # for language model
+            cb_selected = cb_selected[word_sort_ind]
+            if self.training:
+                lm_f_scores = lm_f_scores[word_sort_ind]
+                lm_b_scores = lm_b_scores[word_sort_ind]
+
+            # Embedding look-up for words
+            w = self.word_embeds(wmaps)  # (batch_size, word_pad_len, word_emb_dim)
+            w = self.dropout(w)
+
+            subword = self.subword_hw(self.dropout(
+                torch.cat((cf_selected, cb_selected), dim=2)))  # (batch_size, word_pad_len, 2 * char_feat_dim)
+            subword = self.dropout(subword)
+
+            # Concatenate word embeddings and sub-word features
+            w = torch.cat((w, subword), dim=2)  # (batch_size, word_pad_len, word_emb_dim + 2 * char_feat_dim)
+
+            # Pack padded sequence
+            w = pack_padded_sequence(w, list(wmap_lengths),
+                                    batch_first=True)  # packed sequence of word_emb_dim + 2 * char_feat_dim, with real sequence lengths
+
+            # LSTM
+            w, _ = self.word_blstm(w)  # packed sequence of word_rnn_dim, with real sequence lengths
+
+            # Unpack packed sequence
+            w, _ = pad_packed_sequence(w, batch_first=True)  # (batch_size, max_word_len_in_batch, word_rnn_dim)
+            w = self.dropout(w)
+
+            crf_scores = self.crf(w)  # (batch_size, max_word_len_in_batch, tagset_size, tagset_size)
+
+        elif self.char_type == 'cnn':
+            self.char_pad_len = cmaps.size(2)
+            # Sort by decreasing true word. sequence length
+            wmap_lengths, word_sort_ind = wmap_lengths.sort(dim=0, descending=True)
+            cmaps = cmaps[word_sort_ind]
+            wmaps = wmaps[word_sort_ind]
+            tmaps = tmaps[word_sort_ind]
+            cmap_w_lengths = cmap_w_lengths[word_sort_ind]
+
+            # CNN
+            chars_embeds = self.char_embeds(cmaps)   # (batch, word_len, char_len, embed_dim)
+
+            ## Creating Character level representation using Convolutional Neural Netowrk
+            ## followed by a Maxpooling Layer
+            chars_embeds = chars_embeds.view(-1, 1, self.char_pad_len, self.char_emb_dim)   # (batch * word_len, channel=1, char_len, embed_dim)
+
+            chars_embeds = self.dropout(chars_embeds)
+
+            chars_cnn_out3 = self.char_cnn3(chars_embeds)   # (batch * word_len, channel=char_feat_dim, char_len, embed_dim)
+
+            chars_embeds = nn.functional.max_pool2d(chars_cnn_out3,
+                kernel_size=(chars_cnn_out3.size(2), 1))    # (batch * word_len, channel=char_feat_dim, 1, 1)
+
+            # recover shape
+            chars_embeds = chars_embeds.view(self.batch_size, self.word_pad_len, self.char_feat_dim) # (batch, word_len, char_feat_dim)
+
+            # Embedding look-up for words
+            w = self.word_embeds(wmaps)  # (batch_size, word_pad_len, word_emb_dim)
+
+            subword = chars_embeds
+
+            # Concatenate word embeddings and sub-word features
+            w = torch.cat((w, subword), dim=2)  # (batch_size, word_pad_len, word_emb_dim + 2 * char_feat_dim)
+            w = self.dropout(w)
+
+            # Pack padded sequence
+            w = pack_padded_sequence(w, list(wmap_lengths), batch_first=True)  # packed sequence of word_emb_dim + 2 * char_feat_dim, with real sequence lengths
+
+            # LSTM
+            w, _ = self.word_blstm(w)  # packed sequence of word_rnn_dim, with real sequence lengths
+
+            # Unpack packed sequence
+            w, _ = pad_packed_sequence(w, batch_first=True)  # (batch_size, max_word_len_in_batch, word_rnn_dim)
+            w = self.dropout(w)
+
+
+            crf_scores = self.crf(w)  # (batch_size, max_word_len_in_batch, tagset_size, tagset_size)
+
+        else:
+            # Sort by decreasing true word. sequence length
+            wmap_lengths, word_sort_ind = wmap_lengths.sort(dim=0, descending=True)
+            wmaps = wmaps[word_sort_ind]
+            tmaps = tmaps[word_sort_ind]
+
+            # Embedding look-up for words
+            w = self.word_embeds(wmaps)  # (batch_size, word_pad_len, word_emb_dim)
+
+            w = self.dropout(w)
+
+            # Pack padded sequence
+            w = pack_padded_sequence(w, list(wmap_lengths), batch_first=True)  # packed sequence of word_emb_dim + 2 * char_feat_dim, with real sequence lengths
+
+            # LSTM
+            w, _ = self.word_blstm(w)  # packed sequence of word_rnn_dim, with real sequence lengths
+
+            # Unpack packed sequence
+            w, _ = pad_packed_sequence(w, batch_first=True)  # (batch_size, max_word_len_in_batch, word_rnn_dim)
+            w = self.dropout(w)
+
+            crf_scores = self.crf(w)  # (batch_size, max_word_len_in_batch, tagset_size, tagset_size)
+
+
+        if self.training:
+            if self.char_type == 'lstm':
+                return crf_scores, lm_f_scores, lm_b_scores, wmaps, tmaps, wmap_lengths, word_sort_ind, char_sort_ind
             else:
-                if not torch.is_tensor(inputs):
-                    inputs = torch.from_numpy(inputs)
-                return Variable(inputs.cuda(), volatile=self.volatile)
+                return crf_scores, None, None, wmaps, tmaps, wmap_lengths, word_sort_ind, None
         else:
-            if isinstance(inputs, Variable):
-                inputs = inputs.cpu()
-                inputs.volatile = self.volatile
-                return inputs
+            if self.char_type == 'lstm':
+                return crf_scores, wmaps, tmaps, wmap_lengths, word_sort_ind, char_sort_ind
             else:
-                if not torch.is_tensor(inputs):
-                    inputs = torch.from_numpy(inputs)
-                return Variable(inputs, volatile=self.volatile)
+                return crf_scores, wmaps, tmaps, wmap_lengths, word_sort_ind, None
 
-    def to_vars(self, *inputs):
-        return [self.to_var(inputs_) if inputs_ is not None and inputs_.size
-                else None for inputs_ in inputs]
+    def init_lstm(self, input_lstm):
+        """
+        Initialize lstm
 
-    def optimize(self, loss):
-        self.opt.zero_grad()
-        loss.backward()
-        if self.expe.config.grad_clip is not None:
-            torch.nn.utils.clip_grad_norm(
-                self.parameters(), self.expe.config.grad_clip)
-        self.opt.step()
+        PyTorch weights parameters:
 
-    def init_optimizer(self, opt_type, learning_rate, weight_decay):
-        if opt_type.lower() == "adam":
-            optimizer = torch.optim.Adam
-        elif opt_type.lower() == "rmsprop":
-            optimizer = torch.optim.RMSprop
-        elif opt_type.lower() == "sgd":
-            optimizer = torch.optim.SGD
-        else:
-            raise NotImplementedError("invalid optimizer: {}".format(opt_type))
+            weight_ih_l[k]: the learnable input-hidden weights of the k-th layer,
+                of shape `(hidden_size * input_size)` for `k = 0`. Otherwise, the shape is
+                `(hidden_size * hidden_size)`
 
-        opt = optimizer(
-            params=filter(
-                lambda p: p.requires_grad, self.parameters()
-            ),
-            lr=learning_rate,
-            weight_decay=weight_decay)
-        return opt
+            weight_hh_l[k]: the learnable hidden-hidden weights of the k-th layer,
+                of shape `(hidden_size * hidden_size)`
+        """
 
-    def save(self, dev_perf, test_perf, iteration):
-        save_path = os.path.join(self.expe.experiment_dir, "model.ckpt")
-        checkpoint = {
-            "dev_perf": dev_perf,
-            "test_perf": test_perf,
-            "iteration": iteration,
-            "state_dict": self.state_dict(),
-            "config": self.expe.config
-        }
-        torch.save(checkpoint, save_path)
-        self.expe.log.info("model saved to {}".format(save_path))
+        # Weights init for forward layer
+        for names in input_lstm._all_weights:
+            for name in filter(lambda n: "weight" in n,  names):
+                weight = getattr(input_lstm, name)
+                sampling_range = np.sqrt(6.0 / (weight.size(0) + weight.size(1)))
+                nn.init.uniform_(weight, -sampling_range, sampling_range)
 
-    def load(self, checkpointed_state_dict=None):
-        if checkpointed_state_dict is None:
-            save_path = os.path.join(self.expe.experiment_dir, "model.ckpt")
-            checkpoint = torch.load(save_path,
-                                    map_location=lambda storage,
-                                    loc: storage)
-            self.load_state_dict(checkpoint['state_dict'])
-            self.expe.log.info("model loaded from {}".format(save_path))
-        else:
-            self.load_state_dict(checkpointed_state_dict)
-            self.expe.log.info("model loaded!")
-
-    @property
-    def volatile(self):
-        return not self.training
-
-    @property
-    def sampling(self):
-        return self.training
+        # Bias initialization steps
+        if input_lstm.bias:
+            for names in input_lstm._all_weights:
+                for name in filter(lambda n: "bias" in n,  names):
+                    bias = getattr(input_lstm, name)
+                    # set all bias to 0
+                    bias.data.zero_()
+                    # except for forget gates which are set to zero
+                    n = bias.size(0)
+                    start, end = n//4, n//2
+                    bias.data[start:end].fill_(1.)
 
 
-class vsl_g(base):
-    @auto_init_pytorch
-    def __init__(self, word_vocab_size, char_vocab_size, embed_dim,
-                 embed_init, n_tags, experiment):
-        super(vsl_g, self).__init__(
-            word_vocab_size, char_vocab_size, embed_dim, embed_init,
-            n_tags, experiment)
-        assert self.expe.config.model.lower() == "g"
-        self.to_latent_variable = sl.gaussian_layer(
-            input_size=2 * self.expe.config.rsize,
-            latent_z_size=self.expe.config.zsize)
+class ViterbiLoss(nn.Module):
+    """
+    Viterbi Loss.
+    """
 
-        self.classifier = nn.Linear(self.expe.config.zsize, n_tags)
+    def __init__(self, tag_map):
+        """
+        :param tag_map: tag map
+        """
+        super(ViterbiLoss, self).__init__()
+        self.tagset_size = len(tag_map)
+        self.start_tag = tag_map['<start>']
+        self.end_tag = tag_map['<end>']
 
-        self.z2x = model_utils.get_mlp_layer(
-            input_size=self.expe.config.zsize,
-            hidden_size=self.expe.config.mhsize,
-            output_size=embed_dim,
-            n_layer=self.expe.config.mlayer)
+    def forward(self, scores, targets, lengths):
+        """
+        Forward propagation.
 
-    def forward(
-            self, data, mask, char, char_mask, label,
-            prior_mean, prior_logvar, kl_temp):
-        data, mask, char, char_mask, label, prior_mean, prior_logvar = \
-            self.to_vars(data, mask, char, char_mask, label,
-                         prior_mean, prior_logvar)
+        :param scores: CRF scores
+        :param targets: true tags indices in unrolled CRF scores
+        :param lengths: word sequence lengths
+        :return: viterbi loss
+        """
 
-        batch_size, batch_len = data.size()
-        input_vecs = self.get_input_vecs(data, mask, char, char_mask)
-        hidden_vecs, _, _ = model_utils.get_rnn_output(
-            input_vecs, mask, self.word_encoder)
+        batch_size = scores.size(0)
+        word_pad_len = scores.size(1)
 
-        z, mean_qs, logvar_qs = \
-            self.to_latent_variable(hidden_vecs, mask, self.sampling)
+        # Gold score
 
-        mean_x = self.z2x(z)
+        targets = targets.unsqueeze(2)
+        scores_at_targets = torch.gather(scores.view(batch_size, word_pad_len, -1), 2, targets).squeeze(
+            2)  # (batch_size, word_pad_len)
 
-        x = model_utils.gaussian(
-            mean_x, Variable(mean_x.data.new(1).fill_(self.expe.config.xvar)))
+        # Everything is already sorted by lengths
+        scores_at_targets, _, _, _ = pack_padded_sequence(scores_at_targets, lengths, batch_first=True)
+        gold_score = scores_at_targets.sum()
 
-        x_pred = self.x2token(x)
+        # All paths' scores
 
-        if label is None:
-            sup_loss = class_logits = None
-        else:
-            class_logits = self.classifier(z)
-            sup_loss = F.cross_entropy(
-                class_logits.view(batch_size * batch_len, -1),
-                label.view(-1).long(),
-                reduce=False).view_as(data) * mask
-            sup_loss = sup_loss.sum(-1) / mask.sum(-1)
+        # Create a tensor to hold accumulated sequence scores at each current tag
+        scores_upto_t = torch.zeros(batch_size, self.tagset_size).to(device)
 
-        log_loss = F.cross_entropy(
-            x_pred.view(batch_size * batch_len, -1),
-            data.view(-1).long(),
-            reduce=False).view_as(data) * mask
-        log_loss = log_loss.sum(-1) / mask.sum(-1)
+        for t in range(max(lengths)):
+            batch_size_t = sum([l > t for l in lengths])  # effective batch size (sans pads) at this timestep
+            if t == 0:
+                scores_upto_t[:batch_size_t] = scores[:batch_size_t, t, self.start_tag, :]  # (batch_size, tagset_size)
+            else:
+                # We add scores at current timestep to scores accumulated up to previous timestep, and log-sum-exp
+                # Remember, the cur_tag of the previous timestep is the prev_tag of this timestep
+                # So, broadcast prev. timestep's cur_tag scores along cur. timestep's cur_tag dimension
+                scores_upto_t[:batch_size_t] = log_sum_exp(
+                    scores[:batch_size_t, t, :, :] + scores_upto_t[:batch_size_t].unsqueeze(2),
+                    dim=1)  # (batch_size, tagset_size)
 
-        if prior_mean is not None and prior_logvar is not None:
-            kl_div = model_utils.compute_KL_div(
-                mean_qs, logvar_qs, prior_mean, prior_logvar)
+        # We only need the final accumulated scores at the <end> tag
+        all_paths_scores = scores_upto_t[:, self.end_tag].sum()
 
-            kl_div = (kl_div * mask.unsqueeze(-1)).sum(-1)
-            kl_div = kl_div.sum(-1) / mask.sum(-1)
+        viterbi_loss = all_paths_scores - gold_score
+        viterbi_loss = viterbi_loss / batch_size
 
-            loss = log_loss + kl_temp * kl_div
-        else:
-            kl_div = None
-            loss = log_loss
-
-        if sup_loss is not None:
-            loss = loss + sup_loss
-
-        return loss.mean(), log_loss.mean(), \
-            kl_div.mean() if kl_div is not None else None, \
-            sup_loss.mean() if sup_loss is not None else None, \
-            mean_qs, logvar_qs, \
-            class_logits.data.cpu().numpy().argmax(-1) \
-            if class_logits is not None else None
-
-
-class vsl_gg(base):
-    @auto_init_pytorch
-    def __init__(self, word_vocab_size, char_vocab_size, embed_dim,
-                 embed_init, n_tags, experiment):
-        super(vsl_gg, self).__init__(
-            word_vocab_size, char_vocab_size, embed_dim, embed_init,
-            n_tags, experiment)
-        if self.expe.config.model.lower() == "flat":
-            self.to_latent_variable = sl.gaussian_flat_layer(
-                input_size=2 * self.expe.config.rsize,
-                latent_z_size=self.expe.config.zsize,
-                latent_y_size=self.expe.config.ysize)
-            yzsize = self.expe.config.zsize + self.expe.config.ysize
-        elif self.expe.config.model.lower() == "hier":
-            self.to_latent_variable = sl.gaussian_hier_layer(
-                input_size=2 * self.expe.config.rsize,
-                latent_z_size=self.expe.config.zsize,
-                latent_y_size=self.expe.config.ysize)
-            yzsize = self.expe.config.zsize
-        else:
-            raise ValueError(
-                "invalid model type: {}".format(self.expe.config.model))
-
-        self.classifier = nn.Linear(self.expe.config.ysize, n_tags)
-
-        self.yz2x = model_utils.get_mlp_layer(
-            input_size=yzsize,
-            hidden_size=self.expe.config.mhsize,
-            output_size=embed_dim,
-            n_layer=self.expe.config.mlayer)
-
-    def forward(
-            self, data, mask, char, char_mask, label,
-            prior_mean, prior_logvar, kl_temp):
-        if prior_mean is not None:
-            prior_mean1, prior_mean2 = prior_mean
-            prior_logvar1, prior_logvar2 = prior_logvar
-        else:
-            prior_mean1 = prior_mean2 = prior_logvar1 = prior_logvar2 = None
-
-        data, mask, char, char_mask, label, prior_mean1, \
-            prior_mean2, prior_logvar1, prior_logvar2 = \
-            self.to_vars(data, mask, char, char_mask, label,
-                         prior_mean1, prior_mean2,
-                         prior_logvar1, prior_logvar2)
-
-        batch_size, batch_len = data.size()
-        input_vecs = self.get_input_vecs(data, mask, char, char_mask)
-        hidden_vecs, _, _ = model_utils.get_rnn_output(
-            input_vecs, mask, self.word_encoder)
-
-        z, y, mean_qs, logvar_qs, mean2_qs, logvar2_qs = \
-            self.to_latent_variable(hidden_vecs, mask, self.sampling)
-
-        if self.expe.config.model.lower() == "flat":
-            yz = torch.cat([z, y], dim=-1)
-        elif self.expe.config.model.lower() == "hier":
-            yz = z
-
-        mean_x = self.yz2x(yz)
-
-        x = model_utils.gaussian(
-            mean_x, Variable(mean_x.data.new(1).fill_(self.expe.config.xvar)))
-
-        x_pred = self.x2token(x)
-
-        if label is None:
-            sup_loss = class_logits = None
-        else:
-            class_logits = self.classifier(y)
-            sup_loss = F.cross_entropy(
-                class_logits.view(batch_size * batch_len, -1),
-                label.view(-1).long(),
-                reduce=False).view_as(data) * mask
-            sup_loss = sup_loss.sum(-1) / mask.sum(-1)
-
-        log_loss = F.cross_entropy(
-            x_pred.view(batch_size * batch_len, -1),
-            data.view(-1).long(),
-            reduce=False).view_as(data) * mask
-        log_loss = log_loss.sum(-1) / mask.sum(-1)
-
-        if prior_mean is not None:
-            kl_div1 = model_utils.compute_KL_div(
-                mean_qs, logvar_qs, prior_mean1, prior_logvar1)
-            kl_div2 = model_utils.compute_KL_div(
-                mean2_qs, logvar2_qs, prior_mean2, prior_logvar2)
-
-            kl_div = (kl_div1 * mask.unsqueeze(-1)).sum(-1) + \
-                (kl_div2 * mask.unsqueeze(-1)).sum(-1)
-            kl_div = kl_div.sum(-1) / mask.sum(-1)
-
-            loss = log_loss + kl_temp * kl_div
-        else:
-            kl_div = None
-            loss = log_loss
-
-        if sup_loss is not None:
-            loss = loss + sup_loss
-
-        return loss.mean(), log_loss.mean(), \
-            kl_div.mean() if kl_div is not None else None, \
-            sup_loss.mean() if sup_loss is not None else None, \
-            mean_qs, logvar_qs, mean2_qs, logvar2_qs, \
-            class_logits.data.cpu().numpy().argmax(-1) \
-            if class_logits is not None else None
+        return viterbi_loss

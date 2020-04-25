@@ -1,0 +1,33 @@
+# Config for training
+
+task: 'pos'
+
+# data processing
+min_word_freq: 3  # threshold for word frequency
+min_char_freq: 1  # threshold for character frequency
+caseless: True  # lowercase everything?
+expand_vocab: True  # expand model's input vocabulary to the pre-trained embeddings' vocabulary?
+
+# model parameters
+char_emb_dim: 30  # character embedding size
+word_emb_dim: 100 # word embedding size
+char_type: 'cnn' # char-level: [lstm | cnn | no]
+char_feat_dim: 30  # character feature size
+char_rnn_layers: 1  # number of layers in character RNN
+highway_layers: 1  # number of layers in highway network
+word_rnn_dim: 200
+word_rnn_layers: 1  # number of layers in word RNN
+dropout: 0.5  # dropout
+fine_tune_word_embeddings: True  # fine-tune pre-trained word embeddings?
+
+# Training parameters
+early_stop: 50
+start_epoch: 0  # start at this epoch
+batch_size: 10  # batch size
+lr: 0.01  # learning rate
+lr_decay: 0.05  # decay learning rate by this amount
+momentum: 0.9  # momentum
+workers: 4  # number of workers for loading data in the DataLoader
+epochs: 150  # number of epochs to run without early-stopping
+grad_clip: 5.  # clip gradients at this value
+# checkpoint: None  # path to model checkpoint, None if none

@@ -1,0 +1,21 @@
+# Config for directory
+
+embedding_path: "../data/twitter_wordvects"
+
+twitter_train: "../data/oct27.train"
+twitter_dev: "../data/oct27.dev"
+twitter_test: "../data/oct27.test"
+
+eng_train: "../data/eng.train"
+eng_dev: "../data/eng.testa"
+eng_test: "../data/eng.testb"
+
+twitter_data: "../data/twitter1.0.data"
+twitter_tag: "../data/twitter_tagfile"
+
+eng_data: "../data/eng.data"
+
+ckpt_path: "./ckpt.pth"
+best_ckpt_path: "./BEST_ckpt.pth"
+
+
