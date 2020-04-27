@@ -9,6 +9,8 @@ import numpy as np
 from config import get_parser
 from data_utils import minibatcher
 from decorators import auto_init_args
+from sklearn.metrics import precision_score, recall_score, f1_score
+
 
 
 def register_exit_handler(exit_handler):
@@ -227,9 +229,15 @@ class accuracy_reporter:
         self.right_count += ((pred == label) * mask).sum()
         self.instance_count += mask.sum()
 
+        self.pred = pred 
+        self.label = label
+
+
     def report(self):
         acc = self.right_count / self.instance_count \
             if self.instance_count else 0.0
+
+
         return {"acc": acc, "f1": 0., "prec": 0., "rec": 0.}, acc
 
 
@@ -241,84 +249,25 @@ class f1_reporter:
         self.inv_tag_vocab = inv_tag_vocab
         self.instance_count = 0
         self.right_count = 0
-        self.tp = 0
-        self.fp = 0
-        self.fn = 0
 
-    @staticmethod
-    def extract_ent(y, m, inv_tag_vocab):
-        def label_decode(label):
-            if label == 'O':
-                return 'O', 'O'
-            return tuple(label.split('-'))
 
-        def new_match(y_prev, y_next):
-            l_prev, l_next = inv_tag_vocab[y_prev], inv_tag_vocab[y_next]
-            c1_prev, c2_prev = label_decode(l_prev)
-            c1_next, c2_next = label_decode(l_next)
-            if c2_prev != c2_next:
-                return False
-            if c1_next not in ['I', 'E']:
-                return False
-            return True
-
-        ret = set()
-        i = 0
-        while i < y.shape[0]:
-            if m[i] == 0:
-                i += 1
-                continue
-            c1, c2 = label_decode(inv_tag_vocab[y[i]])
-            if c1 in ['O', 'I', 'E']:
-                i += 1
-                continue
-            if c1 == 'S':
-                ret.add((i, i + 1, c2))
-                i += 1
-                continue
-            j = i + 1
-            if j == y.shape[0]:
-                break
-            end = False
-            while m[j] != 0 and not end and new_match(y[i], y[j]):
-                ic1, ic2 = label_decode(inv_tag_vocab[y[j]])
-                if ic1 == 'E':
-                    end = True
-                    break
-                j += 1
-            if not end:
-                i += 1
-                continue
-            ret.add((i, j, c2))
-            i = j
-        return ret
 
     def update(self, pred, label, mask):
         pred, label, mask = pred.flatten(), label.flatten(), mask.flatten()
         self.right_count += ((label == pred) * mask).sum()
         self.instance_count += mask.sum()
 
-        p_ent = f1_reporter.extract_ent(pred, mask, self.inv_tag_vocab)
-        y_ent = f1_reporter.extract_ent(label, mask, self.inv_tag_vocab)
-
-        for ent in p_ent:
-            if ent in y_ent:
-                self.tp += 1
-            else:
-                self.fp += 1
-        for ent in y_ent:
-            if ent not in p_ent:
-                self.fn += 1
+        self.pred = pred[mask!=0]
+        self.label = label[mask !=0]
 
     def report(self):
         acc = self.right_count / self.instance_count \
             if self.instance_count else 0.0
-        prec = 1.0 * self.tp / (self.tp + self.fp) \
-            if self.tp + self.fp > 0 else 0.0
-        recall = 1.0 * self.tp / (self.tp + self.fn) \
-            if self.tp + self.fn > 0 else 0.0
-        f1 = 2.0 * prec * recall / (prec + recall) \
-            if prec + recall > 0 else 0.0
+        prec = precision_score(self.label, self.pred, average = 'micro')
+        f1 = f1_score(self.label, self.pred, average = 'micro')
+        recall = recall_score(self.label, self.pred, average = 'micro')
+
+        print(prec,f1, recall )
         return {"acc": acc, "f1": f1, "prec": prec, "rec": recall}, f1
 
 
@@ -341,8 +290,9 @@ class evaluator:
                 label=data[2],
                 batch_size=100,
                 shuffle=False):
+
             outputs = self.model(data, mask, char, char_mask,
-                                 label, None, None, 1.0)
+                                 label, None, None, [1.0, self.expe.config.vb_temp])
             pred, log_loss = outputs[-1], outputs[1]
             reporter.update(pred, label, mask)
 

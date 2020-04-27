@@ -16,6 +16,7 @@ class data_holder:
                  tag_vocab, vocab, char_vocab):
         self.inv_vocab = {i: w for w, i in vocab.items()}
         self.inv_tag_vocab = {i: w for w, i in tag_vocab.items()}
+       
 
 
 class data_processor:
@@ -137,6 +138,7 @@ class data_processor:
         sentence_holder = []
         sent_char_holder = []
         tag_holder = []
+        lengths = []
         for sentence, tag in zip(sentences, tags):
             chars = []
             words = []
@@ -339,3 +341,6 @@ class minibatcher:
 
         self.pointer += 1
         return self._pad(sents, chars, label) + [idx]
+
+
+

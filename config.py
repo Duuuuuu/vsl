@@ -139,6 +139,8 @@ def get_parser():
                        help='gradient clipping (default: 10)')
     train.add_argument('--f1_score', type="bool", default=False,
                        help='whether to report F1 score (default: False)')
+    train.add_argument('--vb_temp', type=float, default=0.1,
+                       help='vb loss adjustment para (default: 0.1)')
 
     misc = parser.add_argument_group('misc')
     misc.add_argument('--print_every', type=int, default=10,

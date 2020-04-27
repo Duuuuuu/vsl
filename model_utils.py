@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 
 from torch.autograd import Variable
-import numpy as np
 
 
 def gaussian(mean, logvar):
@@ -146,3 +145,19 @@ class char_rnn(nn.Module):
         char_outputs = torch.stack(char_output, 0)
         # batch size x seq len x hidden size
         return char_outputs
+    
+
+def get_lengths(mask):
+    return torch.sum(mask, dim = 1)
+
+
+def log_sum_exp(tensor, dim):
+    """
+    Calculates the log-sum-exponent of a tensor's dimension in a numerically stable way.
+    :param tensor: tensor
+    :param dim: dimension to calculate log-sum-exp of
+    :return: log-sum-exp
+    """
+    m, _ = torch.max(tensor, dim)
+    m_expanded = m.unsqueeze(dim).expand_as(tensor)
+    return m + torch.log(torch.sum(torch.exp(tensor - m_expanded), dim))

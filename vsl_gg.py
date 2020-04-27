@@ -17,6 +17,7 @@ def run(e):
     e.log.info("*" * 25 + " DATA PREPARATION " + "*" * 25)
     dp = data_utils.data_processor(experiment=e)
     data, W = dp.process()
+   
 
     label_logvar1_buffer = \
         train_helper.prior_buffer(data.train[0], e.config.zsize,
@@ -98,6 +99,7 @@ def run(e):
         n_tags=len(data.tag_vocab),
         embed_dim=e.config.edim if W is None else W.shape[1],
         embed_init=W,
+        tag_vocab = data.tag_vocab,
         experiment=e)
 
     e.log.info(model)
