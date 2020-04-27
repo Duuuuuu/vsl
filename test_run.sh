@@ -5,7 +5,7 @@ python process_twitter_data_copy.py --train twitter.train.txt \
                                         --test twitter.test.txt 
 
 
-python vsl_gg.py \
+python vsl_gg_crf.py \
     --debug 1 \
     --model hier \
     --data_file data/twitter1.0.data \

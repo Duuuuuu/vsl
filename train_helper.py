@@ -267,7 +267,7 @@ class f1_reporter:
         f1 = f1_score(self.label, self.pred, average = 'micro')
         recall = recall_score(self.label, self.pred, average = 'micro')
 
-        print(prec,f1, recall )
+        #print(prec,f1, recall )
         return {"acc": acc, "f1": f1, "prec": prec, "rec": recall}, f1
 
 
