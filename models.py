@@ -288,8 +288,6 @@ class vsl_gg(base):
             sup_loss = class_logits = None
         else:
             class_logits = self.classifier(y)
-            # print(class_logits.argmax(-1)[0])
-            # print(label[0])
             sup_loss = F.cross_entropy(
                 class_logits.view(batch_size * batch_len, -1),
                 label.view(-1).long(),
@@ -358,10 +356,8 @@ class vsl_gg_crf(base):
             hidden_size=self.expe.config.mhsize,
             output_size=embed_dim,
             n_layer=self.expe.config.mlayer)
-
-
         
-        self.crf = CRF(300, n_tags, tag_vocab)
+        self.crf = CRF(200, n_tags, tag_vocab)
         self.crf_criterion = ViterbiLoss(tag_vocab)
        
 
@@ -390,7 +386,6 @@ class vsl_gg_crf(base):
             self.to_latent_variable(hidden_vecs, mask, self.sampling)
 
         
-        
 
         if self.expe.config.model.lower() == "flat":
             yz = torch.cat([z, y], dim=-1)
@@ -409,17 +404,15 @@ class vsl_gg_crf(base):
             sup_loss = vb_loss = class_logits = None
         else:
             class_logits = self.classifier(y)
-            crf_scores = self.crf(input_vecs)
+            crf_scores = self.crf(hidden_vecs)
 
             tmaps = label.long()
-        
             wmap_lengths = model_utils.get_lengths(mask)
             _, word_sort_ind = wmap_lengths.sort(dim=0, descending=True)
             mask_sorted = mask[word_sort_ind]
             tmaps_sorted = tmaps[word_sort_ind]
             crf_scores = crf_scores[word_sort_ind]
         
-
             vb_loss = self.crf_criterion(crf_scores, tmaps_sorted, mask_sorted)
             sup_loss = F.cross_entropy(
                 class_logits.view(batch_size * batch_len, -1),
@@ -461,9 +454,6 @@ class vsl_gg_crf(base):
             class_logits.data.cpu().numpy().argmax(-1) \
             if class_logits is not None else None
             
-
-
-
 
 
 class CRF(nn.Module):
@@ -555,7 +545,6 @@ class ViterbiLoss(nn.Module):
         gold_score = scores_at_targets.sum(-1)
 
         # All paths' scores
-
         # Create a tensor to hold accumulated sequence scores at each current tag
         scores_upto_t = torch.zeros(batch_size, self.tagset_size) #.to(device)
 

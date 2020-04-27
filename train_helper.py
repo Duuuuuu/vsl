@@ -263,9 +263,9 @@ class f1_reporter:
     def report(self):
         acc = self.right_count / self.instance_count \
             if self.instance_count else 0.0
-        prec = precision_score(self.label, self.pred, average = 'micro')
-        f1 = f1_score(self.label, self.pred, average = 'micro')
-        recall = recall_score(self.label, self.pred, average = 'micro')
+        prec = precision_score(self.label, self.pred, average = 'macro')
+        f1 = f1_score(self.label, self.pred, average = 'macro')
+        recall = recall_score(self.label, self.pred, average = 'macro')
 
         #print(prec,f1, recall )
         return {"acc": acc, "f1": f1, "prec": prec, "rec": recall}, f1

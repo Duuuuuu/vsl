@@ -34,8 +34,6 @@ def process_file(data_file):
                 tag = '<start> '+line[index + 4: -1]+' <end>'
                 sents.append(sent.split(' '))
                 tags.append(tag.split(' '))
-                # print('sent',sent)
-                # print('tag', tag)
     return sents, tags
 
 

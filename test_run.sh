@@ -13,7 +13,7 @@ python vsl_gg_crf.py \
     --tag_file twitter/twitter_tagfile \
     --prior_file test_g \
     --embed_file twitter/twitter_wordvects \
-    --n_iter 200 \
+    --n_iter 2000 \
     --save_prior 1 \
     --train_emb 0 \
     --tie_weights 1 \
