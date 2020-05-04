@@ -16,25 +16,19 @@ Download: [Twitter](https://code.google.com/archive/p/ark-tweet-nlp/downloads), 
 
 Run `process_{ner,twitter,ud}_data.py` first to generate `*.pkl` files and then use it as input for `vsl_{g,gg}.py`.
 
-## Citation
-
-```
-@inproceedings{mchen-variational-18,
-  author    = {Mingda Chen and Qingming Tang and Karen Livescu and Kevin Gimpel},
-  title     = {Variational Sequential Labelers for Semi-Supervised Learning},
-  booktitle = {Proc. of {EMNLP}},
-  year      = {2018}
-}
-```
 
 ### Data Preperation
-save the processed files in the folder data/
+save the processed files in the folder data/ 
+
 prepare the targeted folder ud/ or twitter/ or ner/
+
+The suggested ratio for NER is 0.1, for UD is 0.2, for twitter is 0.3.
 
 ```
 python process_ner_data.py --train eng.train \
                           --dev eng.testa \
                           --test eng.testb \
+                          --ratio 0.1
                           --crf True
 ```
 
@@ -42,6 +36,14 @@ python process_ner_data.py --train eng.train \
 
 ### Train and Evaluate the model
 
-prepare the prior target folder `test_g`
+To add crf for training, use files with suffix _crf
+
+Please differentiate prior names for different datasets
+
+To add unlabeled files:
+```
+--use_unlabel True
+--unlabel_file ner/ner0.1_unlabel_.data
+```
 
 see `test_run.sh` for commands

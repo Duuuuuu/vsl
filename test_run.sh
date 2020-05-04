@@ -29,22 +29,26 @@ python vsl_gg_crf.py \
     --eval_every 100 \
     --vb_temp 0.5 \
     --f1_score True \
-    --summarize 1
+    --summarize 1 \
+    --
 
 
 
 python process_ner_data.py --train eng.train \
                           --dev eng.testa \
                           --test eng.testb \
+                          --ratio 0.1
                           --crf True
 
 python process_ud_data.py --train en-ud-train.conllu \
                           --dev en-ud-dev.conllu \
                           --test en-ud-test.conllu \
+                          --ratio 0.2 \
                           --crf True
 
 python process_twitter_data.py --train twitter.train.txt \
                                --dev twitter.dev.txt \
                                --test twitter.test.txt \
+                               --ratio 0.3 \
                                --crf True
                     

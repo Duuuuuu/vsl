@@ -88,12 +88,36 @@ if __name__ == "__main__":
             train_test_split(train[0], train[1], test_size=args.ratio)
         train = [test_x, test_y]
         assert len(train_x) == len(train_y)
+    
+    if args.ratio < 1:
+        n_unlabel = len(train[0]) // 2
+        X_train, X_test, y_train, y_test = \
+            train_test_split(train[0], train[1], test_size=args.ratio)
+        other = [X_train, y_train]
+        train = [X_test, y_test]
+
+        X_train, X_test, y_train, y_test = \
+            train_test_split(other[0], other[1], test_size=n_unlabel)
+
+        unlabel_data = X_test
+        logging.info("#unlabeled data: {}".format(len(X_test)))
+
+        unlabel_filename = f"twitter/twitter{args.ratio}_unlabel_{'crf' if args.crf else''}.data"
+        with open(unlabel_filename,
+                  "w+", encoding='utf-8') as fp:
+            fp.write(
+                "\n".join([" ".join([w for w in sent])
+                          for sent in unlabel_data]))
+        logging.info(
+            "unlabeled data saved to {}".format(
+                unlabel_filename))
+
 
     logging.info("#train: {}".format(len(train[0])))
     logging.info("#dev: {}".format(len(dev[0])))
     logging.info("#test: {}".format(len(test[0])))
 
-    filename = f"data/twitter{args.ratio}_{'crf' if args.crf else ''}.data"
+    filename = f"twitter/twitter{args.ratio}_{'crf' if args.crf else ''}.data"
 
     pickle.dump(
         [train, dev, test],
