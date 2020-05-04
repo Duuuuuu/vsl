@@ -29,9 +29,10 @@ class data_processor:
 
         self.expe.log.info("loading data from {} ...".format(
             self.expe.config.data_file))
+        
         with open(self.expe.config.data_file, "rb+") as infile:
             train_data, dev_data, test_data = pickle.load(infile)
-
+        
         train_v_data = train_data[0]
         unlabeled_data = None
 
@@ -147,6 +148,7 @@ class data_processor:
                 chars.append([char_vocab.get(c, 0) for c in w])
             sentence_holder.append(words)
             sent_char_holder.append(chars)
+            
             tag_holder.append([tag_vocab[t] for t in tag])
         self.expe.log.info("#sent: {}".format(len(sentence_holder)))
         self.expe.log.info("#word: {}".format(len(sum(sentence_holder, []))))

@@ -16,6 +16,8 @@ def get_args():
                         help='test data path')
     parser.add_argument('--ratio', type=float, default=1.0,
                         help='training data ratio')
+    parser.add_argument('--crf', type=bool, default=False,
+                        help='determine if the data is processed for vsl-crf')
     args = parser.parse_args()
     return args
 
@@ -24,7 +26,8 @@ def process_file(data_file):
     logging.info("loading data from " + data_file + " ...")
     sents = []
     tags = []
-    with open(data_file, 'r', encoding='utf-8') as df:
+    data_path = './data/'+data_file
+    with open(data_path, 'r', encoding='utf-8') as df:
         for line in df.readlines():
             if line.strip():
                 index = line.find('|||')
@@ -36,20 +39,49 @@ def process_file(data_file):
                 tags.append(tag.split(' '))
     return sents, tags
 
+def process_file_crf(data_file):
+    logging.info("loading data from " + data_file + " ...")
+    sents = []
+    tags = []
+    data_path = './data/'+data_file
+    with open(data_path, 'r', encoding='utf-8') as df:
+        for line in df.readlines():
+            if line.strip():
+                index = line.find('|||')
+                if index == -1:
+                    raise ValueError('Format Error')
+                sent = '<start> '+line[: index - 1]+' <end>'
+                tag = '<start> '+line[index + 4: -1]+' <end>'
+                sents.append(sent.split(' '))
+                tags.append(tag.split(' '))
+    return sents, tags
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s %(message)s',
                         datefmt='%m-%d %H:%M')
     args = get_args()
-    train = process_file(args.train)
-    dev = process_file(args.dev)
-    test = process_file(args.test)
 
-    tag_set = set(sum([sum(d[1], []) for d in [train, dev, test]],
+    if args.crf:
+        train = process_file_crf(args.train)
+        dev = process_file_crf(args.dev)
+        test = process_file_crf(args.test)
+        tag_set = set(sum([sum(d[1], []) for d in [train, dev, test]],
                   []))
-    with open("twitter_tagfile", "w+", encoding='utf-8') as fp:
-        fp.write('\n'.join(sorted(list(tag_set))))
+        with open("twitter/twitter_tagfile_crf", "w+", encoding='utf-8') as fp:
+            fp.write('\n'.join(sorted(list(tag_set))))
+                
+    
+    else:
+        train = process_file(args.train)
+        dev = process_file(args.dev)
+        test = process_file(args.test)
+        tag_set = set(sum([sum(d[1], []) for d in [train, dev, test]],
+                  []))
+        with open("twitter/twitter_tagfile", "w+", encoding='utf-8') as fp:
+            fp.write('\n'.join(sorted(list(tag_set))))
+
 
     if args.ratio != 1:
         train_x, test_x, train_y, test_y = \
@@ -61,6 +93,8 @@ if __name__ == "__main__":
     logging.info("#dev: {}".format(len(dev[0])))
     logging.info("#test: {}".format(len(test[0])))
 
+    filename = f"data/twitter{args.ratio}_{'crf' if args.crf else ''}.data"
+
     pickle.dump(
         [train, dev, test],
-        open("data/twitter{}.data".format(args.ratio), "wb+"), protocol=-1)
+        open(filename, "wb+"), protocol=-1)

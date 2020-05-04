@@ -26,3 +26,22 @@ Run `process_{ner,twitter,ud}_data.py` first to generate `*.pkl` files and then 
   year      = {2018}
 }
 ```
+
+### Data Preperation
+save the processed files in the folder data/
+prepare the targeted folder ud/ or twitter/ or ner/
+
+```
+python process_ner_data.py --train eng.train \
+                          --dev eng.testa \
+                          --test eng.testb \
+                          --crf True
+```
+
+
+
+### Train and Evaluate the model
+
+prepare the prior target folder `test_g`
+
+see `test_run.sh` for commands

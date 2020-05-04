@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 
 from torch.autograd import Variable
+import numpy as np
 
 
 def gaussian(mean, logvar):
@@ -160,4 +161,5 @@ def log_sum_exp(tensor, dim):
     """
     m, _ = torch.max(tensor, dim)
     m_expanded = m.unsqueeze(dim).expand_as(tensor)
+    
     return m + torch.log(torch.sum(torch.exp(tensor - m_expanded), dim))
