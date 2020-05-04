@@ -36,7 +36,7 @@ python process_ner_data.py --train eng.train \
 
 ### Train and Evaluate the model
 
-To add crf for training, use files with suffix _crf
+To add crf for training, use files with suffix `_crf`
 
 Please differentiate prior names for different datasets
 
