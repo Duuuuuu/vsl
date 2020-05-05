@@ -107,3 +107,10 @@ venv.bak/
 twitter/twitter_wordvects
 .net
 ud/es.bin
+ner/glove_vocab.txt
+twitter/twitter_prior
+ud/ud_prior
+ner/ner_prior
+ner/vocab_100000
+ud/vocab_100000
+twitter/vocab_100000
