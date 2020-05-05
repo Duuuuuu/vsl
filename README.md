@@ -38,6 +38,12 @@ python process_ner_data.py --train eng.train \
 
 To add crf for training, use files with suffix `_crf`
 
+When using UD (ud) or NER (glove), remember to revise the `embed_type`
+
+```
+--embed_type glove
+```
+
 Please differentiate prior names for different datasets
 
 To add unlabeled files:
