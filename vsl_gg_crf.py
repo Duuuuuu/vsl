@@ -186,11 +186,11 @@ def run(e):
             up_logvar2 = unlabel_logvar2_buffer[u_ixs]
             up_mean2 = unlabel_mean2_buffer[u_ixs]
 
-            u_loss, u_logloss, u_kld, _, \
+            u_loss, u_logloss, u_kld, _, _, \
                 uq_mean1, uq_logvar1, uq_mean2, uq_logvar2, _ = \
                 model(u_data, u_mask, u_char, u_char_mask,
                       None, [up_mean1, up_mean2], [up_logvar1, up_logvar2],
-                      kl_temp)
+                      [kl_temp, 0])
 
             unlabel_logvar1_buffer.update_buffer(
                 u_ixs, uq_logvar1, u_mask.sum(-1))
