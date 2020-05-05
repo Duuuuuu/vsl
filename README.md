@@ -36,6 +36,16 @@ python process_ner_data.py --train eng.train \
 
 ### Train and Evaluate the model
 
+Every time you need to set the following arguments:
+
+```
+--data_file ner/ner0.1_crf.data \
+--vocab_file ner \
+--tag_file ner/ner_tagfile_crf \
+--prior_file ner/ner_prior \
+--embed_file ner/glove_vocab.txt \
+```
+
 To add crf for training, use files with suffix `_crf`
 
 When using UD (ud) or NER (glove), remember to revise the `embed_type`
