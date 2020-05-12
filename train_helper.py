@@ -249,6 +249,9 @@ class f1_reporter:
         self.inv_tag_vocab = inv_tag_vocab
         self.instance_count = 0
         self.right_count = 0
+        self.f1 = []
+        self.prec = []
+        self.rec = []
 
 
 
@@ -267,8 +270,12 @@ class f1_reporter:
         f1 = f1_score(self.label, self.pred, average = 'micro')
         recall = recall_score(self.label, self.pred, average = 'micro')
 
+        self.f1.append(f1)
+        self.rec.append(recall)
+        self.prec.append(prec))
+
         #print(prec,f1, recall )
-        return {"acc": acc, "f1": f1, "prec": prec, "rec": recall}, acc
+        return {"acc": acc, "f1": np.mean(self.f1), "prec": np.mean(self.prec), "rec": np.mean(self.rec)}, self.f1
 
 
 class evaluator:

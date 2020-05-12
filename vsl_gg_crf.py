@@ -266,7 +266,7 @@ def run(e):
                             "test/" + n, v, it)
             e.log.info("best dev acc result: {:.4f}, "
                        "test f1 result: {:.4f}, "
-                       .format(best_dev_res, test_perf['f1']))
+                       .format(best_dev_res, test_res))
             label_stats.reset()
             unlabel_stats.reset()
 
