@@ -106,7 +106,7 @@ class base(nn.Module):
         return opt
 
     def save(self, dev_perf, test_perf, iteration):
-        save_path = os.path.join(self.expe.experiment_dir, f"{self.model_name}.ckpt")
+        save_path = os.path.join(self.expe.experiment_dir, f"./saved_models/{self.model_name}.ckpt")
         checkpoint = {
             "dev_perf": dev_perf,
             "test_perf": test_perf,
