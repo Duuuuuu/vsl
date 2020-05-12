@@ -26,6 +26,8 @@ class base(nn.Module):
 
         self.word_embed = nn.Embedding(word_vocab_size, embed_dim)
 
+        self.model_name = self.expe.config.model_name
+
         if embed_init is not None:
             self.word_embed.weight.data.copy_(torch.from_numpy(embed_init))
             self.expe.log.info("Initialized with pretrained word embedding")
@@ -104,7 +106,7 @@ class base(nn.Module):
         return opt
 
     def save(self, dev_perf, test_perf, iteration):
-        save_path = os.path.join(self.expe.experiment_dir, "model.ckpt")
+        save_path = os.path.join(self.expe.experiment_dir, f"{self.model_name}.ckpt")
         checkpoint = {
             "dev_perf": dev_perf,
             "test_perf": test_perf,
@@ -155,6 +157,7 @@ class vsl_g(base):
             hidden_size=self.expe.config.mhsize,
             output_size=embed_dim,
             n_layer=self.expe.config.mlayer)
+
 
     def forward(
             self, data, mask, char, char_mask, label,

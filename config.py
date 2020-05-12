@@ -24,6 +24,8 @@ def get_parser():
     basic_group.add_argument('--model', type=str, default='g',
                              choices=['g', 'flat', 'hier'],
                              help='type of model (default: g)')
+    basic_group.add_argument('--model_name', type=str, default=None,
+                             help='model name')
     basic_group.add_argument('--random_seed', type=int, default=0,
                              help='Random seed (default: 0)')
 
