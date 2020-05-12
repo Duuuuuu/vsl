@@ -235,11 +235,11 @@ def run(e):
             if best_dev_res < dev_res:
                 best_dev_res = dev_res
 
-                # e.log.info("*" * 25 + " TEST SET EVALUATION " + "*" * 25)
+                e.log.info("*" * 25 + " TEST SET EVALUATION " + "*" * 25)
 
-                # test_perf, test_res = evaluator.evaluate(data.test)
+                test_perf, test_res = evaluator.evaluate(data.test)
 
-                # e.log.info("*" * 25 + " TEST SET EVALUATION " + "*" * 25)
+                e.log.info("*" * 25 + " TEST SET EVALUATION " + "*" * 25)
 
                 model.save(
                     dev_perf=dev_perf,
@@ -261,11 +261,7 @@ def run(e):
                        .format(best_dev_res, test_res))
             label_stats.reset()
             unlabel_stats.reset()
-    e.log.info("*" * 25 + " TEST SET EVALUATION " + "*" * 25)
 
-    test_perf, test_res = evaluator.evaluate(data.test)
-
-    e.log.info("*" * 25 + " TEST SET EVALUATION " + "*" * 25)
 
 if __name__ == '__main__':
 
