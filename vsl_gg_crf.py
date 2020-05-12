@@ -245,7 +245,7 @@ def run(e):
 
                 e.log.info("*" * 25 + " TEST SET EVALUATION " + "*" * 25)
 
-                test_perf, test_res = evaluator.evaluate(data.test)
+                #test_perf, test_res = evaluator.evaluate(data.test)
 
                 e.log.info("*" * 25 + " TEST SET EVALUATION " + "*" * 25)
 
@@ -269,6 +269,9 @@ def run(e):
                        .format(best_dev_res, test_res))
             label_stats.reset()
             unlabel_stats.reset()
+    e.log.info("*" * 25 + " TEST SET EVALUATION " + "*" * 25)
+    test_perf, test_res = evaluator.evaluate(data.test)
+    e.log.info("*" * 25 + " TEST SET EVALUATION " + "*" * 25)
 
 
 if __name__ == '__main__':
