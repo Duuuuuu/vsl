@@ -518,6 +518,7 @@ class ViterbiLoss(nn.Module):
         self.tagset_size = len(tag_map)
         self.start_tag = tag_map['<start>']
         self.end_tag = tag_map['<end>']
+        self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     def forward(self, scores, targets, mask):
         """
@@ -546,7 +547,7 @@ class ViterbiLoss(nn.Module):
 
         # All paths' scores
         # Create a tensor to hold accumulated sequence scores at each current tag
-        scores_upto_t = torch.zeros(batch_size, self.tagset_size) #.to(device)
+        scores_upto_t = torch.zeros(batch_size, self.tagset_size).to(self.device)
 
         for t in range(int(max(lengths).item())):
             batch_size_t = sum([l > t for l in lengths])  # effective batch size (sans pads) at this timestep
