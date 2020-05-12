@@ -272,7 +272,7 @@ class f1_reporter:
 
         self.f1.append(f1)
         self.rec.append(recall)
-        self.prec.append(prec))
+        self.prec.append(prec)
 
         #print(prec,f1, recall )
         return {"acc": acc, "f1": np.mean(self.f1), "prec": np.mean(self.prec), "rec": np.mean(self.rec)}, self.f1
