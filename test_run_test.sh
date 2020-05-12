@@ -116,7 +116,7 @@ rm -r ner/ner_prior
 python vsl_gg.py \
     --debug 1 \
     --model hier \
-    --data_file ner/ner0.1.data \
+    --data_file ner/ner0.1_.data \
     --vocab_file ner \
     --tag_file ner/ner_tagfile \
     --prior_file ner/ner_prior \
@@ -153,7 +153,7 @@ rm -r ner/ner_prior
 python vsl_gg.py \
     --debug 1 \
     --model hier \
-    --data_file ner/ner0.1.data \
+    --data_file ner/ner0.1_.data \
     --vocab_file ner \
     --tag_file ner/ner_tagfile \
     --prior_file ner/ner_prior \
