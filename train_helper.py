@@ -260,24 +260,28 @@ class f1_reporter:
         self.right_count += ((label == pred) * mask).sum()
         self.instance_count += mask.sum()
 
-        self.pred = pred[mask!=0]
-        self.label = label[mask !=0]
+        preds = pred[mask!=0]
+        labels = label[mask !=0]
 
-    def report(self):
-        acc = self.right_count / self.instance_count \
-            if self.instance_count else 0.0
-        prec = precision_score(self.label, self.pred, average = 'micro')
-        f1 = f1_score(self.label, self.pred, average = 'micro')
-        recall = recall_score(self.label, self.pred, average = 'micro')
+        prec = precision_score(labels, preds, average = 'micro')
+        f1 = f1_score(labels, preds, average = 'micro')
+        recall = recall_score(labels, preds, average = 'micro')
 
         self.f1.append(f1)
         self.rec.append(recall)
         self.prec.append(prec)
 
-        F1 =  np.mean(self.f1)
+    def report(self):
+        acc = self.right_count / self.instance_count \
+            if self.instance_count else 0.0
+        
+
+        prec_final = np.mean(self.prec)
+        rec_final = np.mean(self.rec)
+        f1_final =  np.mean(self.f1)
 
         #print(prec,f1, recall )
-        return {"acc": acc, "f1":F1, "prec": np.mean(self.prec), "rec": np.mean(self.rec)}, F1
+        return {"acc": acc, "f1":f1_final, "prec": prec_final, "rec": rec_final}, f1_final
 
 
 class evaluator:
