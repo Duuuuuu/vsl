@@ -264,9 +264,9 @@ def run(e):
                     for n, v in test_perf.items():
                         writer.add_scalar(
                             "test/" + n, v, it)
-            e.log.info("best dev result: {:.4f}, "
-                       "test result: {:.4f}, "
-                       .format(best_dev_res, test_res))
+            e.log.info("best dev acc result: {:.4f}, "
+                       "test f1 result: {:.4f}, "
+                       .format(best_dev_res, test_perf['f1']))
             label_stats.reset()
             unlabel_stats.reset()
 
