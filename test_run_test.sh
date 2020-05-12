@@ -35,7 +35,7 @@ python vsl_gg.py \
     --summarize 1 \
     --use_unlabel True \
     --unlabel_file ud/ud0.2_unlabel_.data \
-    --model_name ud-vsl-su
+    --model_name ud-vsl-su 
 
 rm -r ud/ud_prior
 
@@ -262,6 +262,6 @@ python vsl_gg_crf.py \
     --summarize 1 \
     --use_unlabel True\
     --unlabel_file ner/ner0.1_unlabel_crf.data \
-     --model_name ner-vsl-crf-su
+    --model_name ner-vsl-crf-su
 
 

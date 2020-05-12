@@ -34,7 +34,8 @@ python vsl_gg.py \
     --f1_score True \
     --summarize 1 \
     --use_unlabel True \
-    --unlabel_file ud/ud0.2_unlabel_.data
+    --unlabel_file ud/ud0.2_unlabel_.data \
+    --model_name ud-vsl-su
 
 rm -r ud/ud_prior
 
@@ -69,7 +70,8 @@ python vsl_gg_crf.py \
     --eval_every 100 \
     --vb_temp 0.5 \
     --f1_score True \
-    --summarize 1 
+    --summarize 1 \
+    --model_name ud-vsl-crf-s
 
 rm -r ud/ud_prior
 
@@ -106,7 +108,8 @@ python vsl_gg_crf.py \
     --f1_score True \
     --summarize 1 \
     --use_unlabel True \
-    --unlabel_file ud/ud0.2_unlabel_crf.data
+    --unlabel_file ud/ud0.2_unlabel_crf.data \
+    --model_name ud-vsl-crf-su
     
 rm -r ud/ud_prior  
 
@@ -143,7 +146,8 @@ python vsl_gg.py \
     --eval_every 100 \
     --vb_temp 0.5 \
     --f1_score True \
-    --summarize 1 
+    --summarize 1 \
+    --model_name ner-vsl-s 
    
 
 
@@ -182,7 +186,8 @@ python vsl_gg.py \
     --f1_score True \
     --summarize 1 \
     --use_unlabel True\
-    --unlabel_file ner/ner0.1_unlabel_.data
+    --unlabel_file ner/ner0.1_unlabel_.data \
+    --model_name ner-vsl-su 
 
 #test ner,vsl-crf, without unlabel
 rm -r ner/ner_prior
@@ -217,7 +222,8 @@ python vsl_gg_crf.py \
     --eval_every 100 \
     --vb_temp 0.5 \
     --f1_score True \
-    --summarize 1 
+    --summarize 1 \
+    --model_name ner-vsl-crf-s 
 
 
 #test ner,vsl-crf, with unlabel
@@ -255,6 +261,9 @@ python vsl_gg_crf.py \
     --f1_score True \
     --summarize 1 \
     --use_unlabel True\
-    --unlabel_file ner/ner0.1_unlabel_crf.data
+    --unlabel_file ner/ner0.1_unlabel_crf.data \
+    --model_name ner-vsl-crf-su
+
+rm -r ner/ner_prior
 
 
