@@ -69,7 +69,7 @@ python vsl_gg_crf.py \
     --eval_every 100 \
     --vb_temp 0.5 \
     --f1_score True \
-    --summarize 1 \
+    --summarize 1 
 
 rm -r ud/ud_prior
 
@@ -143,7 +143,7 @@ python vsl_gg.py \
     --eval_every 100 \
     --vb_temp 0.5 \
     --f1_score True \
-    --summarize 1 \
+    --summarize 1 
    
 
 
@@ -217,7 +217,7 @@ python vsl_gg_crf.py \
     --eval_every 100 \
     --vb_temp 0.5 \
     --f1_score True \
-    --summarize 1 \
+    --summarize 1 
 
 
 #test ner,vsl-crf, with unlabel
