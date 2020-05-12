@@ -11,7 +11,7 @@ python vsl_gg.py \
     --prior_file ud/ud_prior \
     --embed_file ud/es.bin \
     --embed_type ud \
-    --n_iter 30000 \
+    --n_iter 100 \
     --save_prior 1 \
     --train_emb 0 \
     --tie_weights 1 \
@@ -48,7 +48,7 @@ python vsl_gg_crf.py \
     --prior_file ud/ud_prior \
     --embed_file ud/es.bin \
     --embed_type ud \
-    --n_iter 30000 \
+    --n_iter 100 \
     --save_prior 1 \
     --train_emb 0 \
     --tie_weights 1 \
@@ -83,7 +83,7 @@ python vsl_gg_crf.py \
     --prior_file ud/ud_prior \
     --embed_file ud/es.bin \
     --embed_type ud \
-    --n_iter 30000 \
+    --n_iter 100 \
     --save_prior 1 \
     --train_emb 0 \
     --tie_weights 1 \
@@ -122,7 +122,7 @@ python vsl_gg.py \
     --prior_file ner/ner_prior \
     --embed_file ner/glove_vocab.txt \
     --embed_type glove \
-    --n_iter 30000 \
+    --n_iter 100 \
     --save_prior 1 \
     --train_emb 0 \
     --tie_weights 1 \
@@ -159,7 +159,7 @@ python vsl_gg.py \
     --prior_file ner/ner_prior \
     --embed_file ner/glove_vocab.txt \
     --embed_type glove \
-    --n_iter 30000 \
+    --n_iter 100 \
     --save_prior 1 \
     --train_emb 0 \
     --tie_weights 1 \
@@ -196,7 +196,7 @@ python vsl_gg_crf.py \
     --prior_file ner/ner_prior \
     --embed_file ner/glove_vocab.txt \
     --embed_type glove \
-    --n_iter 30000 \
+    --n_iter 100 \
     --save_prior 1 \
     --train_emb 0 \
     --tie_weights 1 \
@@ -232,7 +232,7 @@ python vsl_gg_crf.py \
     --prior_file ner/ner_prior \
     --embed_file ner/glove_vocab.txt \
     --embed_type glove \
-    --n_iter 30000 \
+    --n_iter 100 \
     --save_prior 1 \
     --train_emb 0 \
     --tie_weights 1 \
